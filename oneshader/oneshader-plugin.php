@@ -27,30 +27,34 @@ function oneshader_curl_get_contents($url) {
 }
 
 function oneshader_do_query($query, $timeout = 60*60) {
-	global $wpdb;
-	$table_name = $wpdb->prefix . 'oneshader';
-
 	$timeout += intval(rand(0, $timeout)); // prevent that all cached items get invalid at the same time
 
-	$json = '';
+	$data = '';
 
-	$dbkey = $query;
+	$dbkey = 'oneshader_' . $query;
 
-	$cached = get_transient( $dbkey );
+	$cached = get_transient($dbkey);
 	if ($cached) {
-		$json = $cached;
+		$data = $cached;
 	} else {
 		$url = 'https://oneshader.net/api/v1/' . $query;
-		$json = oneshader_curl_get_contents($url);
+		$data = oneshader_curl_get_contents($url);
+		$json = json_decode($data);
 
-		json_decode($json);
-		if (json_last_error() != JSON_ERROR_NONE) {
-    		set_transient( $dbkey, $json, $timeout );
+		if (json_last_error() == JSON_ERROR_NONE) {
+			// add license to each object
+			foreach ($json->objects as $value) {
+				// fetch json from https://oneshader.net/api/v1/turtle/ id /license
+				$license = json_decode(oneshader_curl_get_contents('https://oneshader.net/api/v1/shader/' . $value->object_id . '/license'));
+				$value->license = $license->url;
+			}
+			$data = json_encode($json);
+
+			set_transient($dbkey, $data, $timeout);
 		}
 	}
 
-	$obj = json_decode($json, true);
-	return $obj;
+	return json_decode($data, TRUE);
 }
 
 function oneshader_list($atts) {
@@ -73,10 +77,12 @@ function oneshader_list($atts) {
 	$start = microtime(true);
 
     $count = 0;
+	$ldJSON = array();
 	foreach ($results as $key => $turtle) {
 		$info = $turtle;
 
 		$html .= oneshader_layout_ditty($info, $a['hideusername']);
+		$ldJSON[] = oneshader_ld_json($info);
 
 		if (microtime(true) - $start > 15) {
 			break;
@@ -88,9 +94,42 @@ function oneshader_list($atts) {
 		}
 	}
 
+	$html .= '</ul>';
 
-	$html .= '</ul>';	 
+	$html .= '<script type="application/ld+json">' . json_encode($ldJSON) . '</script>';
+
     return $html;
+}
+
+function oneshader_ld_json($info) {
+	return array("@context"           => "https://schema.org",
+	             "@type"              => "ImageObject",
+	             "name"               => $info['title'],
+	             "caption"            => $info['title'],
+	             "creator"            => array("@type"      => "Person",
+	                                           "name"       => $info['user_id'],
+	                                           "identifier" => $info['user_id'],
+	                                           "url"        => "https://oneshader.net/user/" . $info['user_id']),
+	             "description"        => $info['description'],
+	             "image"              => "https://oneshader.net/thumbnail/" . $info['object_id'] . ".jpg",
+	             "thumbnail"          => "https://oneshader.net/thumbnail/" . $info['object_id'] . ".jpg",
+	             "contentUrl"         => "https://oneshader.net/thumbnail/" . $info['object_id'] . ".jpg",
+	             "sameAs"             => "https://oneshader.net/turtle/" . $info['object_id'],
+	             "url"                => "https://oneshader.net/turtle/" . $info['object_id'],
+	             "dateCreated"        => $info['date_published'],
+	             "identifier"         => $info['object_id'],
+	             "material"           => "GLSL Fragment Shader",
+	             "genre"              => "Generative Art",
+	             "commentCount"       => $info['comments'],
+	             "copyrightHolder"    => array("@type"      => "Person",
+	                                           "name"       => $info['user_id'],
+	                                           "identifier" => $info['user_id'],
+	                                           "url"        => "https://oneshader.net/user/" . $info['user_id']),
+	             "copyrightYear"      => date('Y'),
+	             "copyrightNotice"    => "© " . date('Y') . " " . $info['user_id'] . " - oneshader",
+	             "creditText"         => "© " . date('Y') . " " . $info['user_id'] . " - oneshader",
+	             "acquireLicensePage" => "https://oneshader.net/terms",
+	             "license"            => $info['license']);
 }
 
 function oneshader_layout_ditty($info, $hideusername) {
