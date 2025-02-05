@@ -3,10 +3,11 @@
 /*
 Plugin Name: OneShader Gallery
 Plugin URI: https://github.com/reindernijhoff/wp-oneshader-gallery
-Description: Creates and update a gallery with OneShader ditties based on a query.
-Version: 0.1
+Description: Creates and update a gallery with OneShader shaders based on a query.
+Version: 1.0
 Author: Reinder Nijhoff
 Author URI: https://reindernijhoff.net/
+License: GPLv2 or later
 */
 
 $oneshader_db_version = '1.0';
@@ -148,3 +149,4 @@ function oneshader_layout_ditty($info, $hideusername) {
 
 register_activation_hook( __FILE__, 'oneshader_install' );
 add_shortcode('oneshader-list', 'oneshader_list');
+
