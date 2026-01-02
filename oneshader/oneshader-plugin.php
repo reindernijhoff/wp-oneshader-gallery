@@ -3,139 +3,149 @@
 /*
 Plugin Name: OneShader Gallery
 Plugin URI: https://github.com/reindernijhoff/wp-oneshader-gallery
-Description: Creates and update a gallery with OneShader shaders based on a query.
-Version: 1.0
+Description: Creates and updates a gallery with OneShader shaders based on a query.
+Version: 1.0.0
 Author: Reinder Nijhoff
 Author URI: https://reindernijhoff.net/
+Text Domain: oneshader-gallery
 License: GPLv2 or later
 */
 
-$oneshader_db_version = '1.0';
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 function oneshader_install() {
 }
 
-function oneshader_curl_get_contents($url) {
-    $response = wp_remote_get($url);
-    $body = wp_remote_retrieve_body($response);
+function oneshader_fetch( $url ) {
+	$response = wp_remote_get( $url );
 
-    return $body;
+	if ( is_wp_error( $response ) ) {
+		return null;
+	}
+
+	return wp_remote_retrieve_body( $response );
 }
 
-function oneshader_do_query($query, $timeout = 60*60) {
-	$timeout += intval(rand(0, $timeout)); // prevent that all cached items get invalid at the same time
-
+function oneshader_do_query( $query, $timeout = HOUR_IN_SECONDS ) {
 	$data = '';
+	$key  = 'oneshader_' . md5( $query );
 
-	$dbkey = 'oneshader_' . $query;
-
-	$cached = get_transient($dbkey);
-	if ($cached) {
+	$cached = get_transient( $key );
+	if ( false !== $cached ) {
 		$data = $cached;
 	} else {
-		$url = 'https://oneshader.net/api/v1/' . $query;
-		$data = oneshader_curl_get_contents($url);
-		$json = json_decode($data);
+		$url  = 'https://oneshader.net/api/v1/' . ltrim( $query, '/' );
+		$data = oneshader_fetch( $url );
+		$json = json_decode( $data );
 
-		if (json_last_error() == JSON_ERROR_NONE) {
-			$data = json_encode($json);
-
-			set_transient($dbkey, $data, $timeout);
+		if ( json_last_error() === JSON_ERROR_NONE ) {
+			$data = wp_json_encode( $json );
+			set_transient( $key, $data, $timeout + wp_rand( 0, $timeout ) );
 		}
 	}
 
-	return json_decode($data, TRUE);
+	$decoded = json_decode( $data, true );
+
+	return is_array( $decoded ) ? $decoded : array( 'objects' => array() );
 }
 
-function oneshader_list($atts) {
-	$a = shortcode_atts( array(
-		'username' => false,
-		'query' => '',
-		'columns' => 3,
-		'limit' => 0,
-		'hideusername' => 0
-	), $atts );
+function oneshader_list( $atts ) {
+	$a = shortcode_atts(
+		array(
+			'username'     => false,
+			'query'        => '',
+			'columns'      => 2,
+			'limit'        => 0,
+			'hideusername' => 0,
+		),
+		$atts
+	);
 
-	$username = $a['username'];
-	$limit = $a['limit'];
+	$list    = oneshader_do_query( $a['query'] );
+	$results = isset( $list['objects'] ) ? $list['objects'] : array();
 
-	$list = oneshader_do_query($a['query']);
-	$results = $list["objects"];
+	$html = '<ul class="wp-block-gallery columns-' . esc_attr( $a['columns'] ) . ' is-cropped">';
 
-	$html = '<ul class="wp-block-gallery columns-' . $a['columns'] . ' is-cropped">';
+	$start  = microtime( true );
+	$count  = 0;
+	$ldjson = array();
 
-	$start = microtime(true);
+	foreach ( $results as $result ) {
+		$html    .= oneshader_layout_shader( $result, (int) $a['hideusername'] );
+		$ldjson[] = oneshader_ld_json( $result );
 
-    $count = 0;
-	$ldJSON = array();
-	foreach ($results as $key => $turtle) {
-		$info = $turtle;
-
-		$html .= oneshader_layout_ditty($info, $a['hideusername']);
-		$ldJSON[] = oneshader_ld_json($info);
-
-		if (microtime(true) - $start > 15) {
+		if ( microtime( true ) - $start > 15 ) {
 			break;
 		}
 
-		$count ++;
-		if ($limit > 0 && $count >= $limit) {
-		    break;
+		$count++;
+		if ( $a['limit'] > 0 && $count >= $a['limit'] ) {
+			break;
 		}
 	}
 
 	$html .= '</ul>';
+	$html .= '<script type="application/ld+json">' . wp_json_encode( $ldjson ) . '</script>';
 
-	$html .= '<script type="application/ld+json">' . json_encode($ldJSON) . '</script>';
-
-    return $html;
+	return $html;
 }
 
-function oneshader_ld_json($info) {
-	return array("@context"           => "https://schema.org",
-	             "@type"              => "ImageObject",
-	             "name"               => $info['title'],
-	             "caption"            => $info['title'],
-	             "creator"            => array("@type"      => "Person",
-	                                           "name"       => $info['user_id'],
-	                                           "identifier" => $info['user_id'],
-	                                           "url"        => "https://oneshader.net/user/" . $info['user_id']),
-	             "description"        => $info['description'],
-	             "image"              => "https://oneshader.net/thumbnail/" . $info['object_id'] . ".jpg",
-	             "thumbnail"          => "https://oneshader.net/thumbnail/" . $info['object_id'] . ".jpg",
-	             "contentUrl"         => "https://oneshader.net/thumbnail/" . $info['object_id'] . ".jpg",
-	             "sameAs"             => "https://oneshader.net/turtle/" . $info['object_id'],
-	             "url"                => "https://oneshader.net/turtle/" . $info['object_id'],
-	             "dateCreated"        => $info['date_published'],
-	             "identifier"         => $info['object_id'],
-	             "material"           => "GLSL Fragment Shader",
-	             "genre"              => "Generative Art",
-	             "commentCount"       => $info['comments'],
-	             "copyrightHolder"    => array("@type"      => "Person",
-	                                           "name"       => $info['user_id'],
-	                                           "identifier" => $info['user_id'],
-	                                           "url"        => "https://oneshader.net/user/" . $info['user_id']),
-	             "copyrightYear"      => date('Y'),
-	             "copyrightNotice"    => "© " . date('Y') . " " . $info['user_id'] . " - oneshader",
-	             "creditText"         => "© " . date('Y') . " " . $info['user_id'] . " - oneshader",
-	             "acquireLicensePage" => "https://oneshader.net/terms",
-	             "license"            => $info['license']);
+function oneshader_ld_json( $info ) {
+	return array(
+		'@context'           => 'https://schema.org',
+		'@type'              => 'ImageObject',
+		'name'               => $info['title'],
+		'caption'            => $info['title'],
+		'creator'            => array(
+			'@type'      => 'Person',
+			'name'       => $info['user_id'],
+			'identifier' => $info['user_id'],
+			'url'        => 'https://oneshader.net/user/' . $info['user_id'],
+		),
+		'description'        => $info['description'],
+		'image'              => 'https://oneshader.net/thumbnail/' . $info['object_id'] . '.jpg',
+		'thumbnail'          => 'https://oneshader.net/thumbnail/' . $info['object_id'] . '.jpg',
+		'contentUrl'         => 'https://oneshader.net/thumbnail/' . $info['object_id'] . '.jpg',
+		'sameAs'             => 'https://oneshader.net/shader/' . $info['object_id'],
+		'url'                => 'https://oneshader.net/shader/' . $info['object_id'],
+		'dateCreated'        => $info['date_published'],
+		'identifier'         => $info['object_id'],
+		'material'           => 'GLSL Fragment Shader',
+		'genre'              => 'Generative Art',
+		'commentCount'       => $info['comments'],
+		'copyrightHolder'    => array(
+			'@type'      => 'Person',
+			'name'       => $info['user_id'],
+			'identifier' => $info['user_id'],
+			'url'        => 'https://oneshader.net/user/' . $info['user_id'],
+		),
+		'copyrightYear'      => gmdate( 'Y' ),
+		'copyrightNotice'    => '© ' . gmdate( 'Y' ) . ' ' . $info['user_id'] . ' - OneShader',
+		'creditText'         => '© ' . gmdate( 'Y' ) . ' ' . $info['user_id'] . ' - OneShader',
+		'acquireLicensePage' => 'https://oneshader.net/terms',
+		'license'            => $info['license'],
+	);
 }
 
-function oneshader_layout_ditty($info, $hideusername) {
-	$html = '<li class="blocks-gallery-item" style="object-fit:cover; aspect-ratio: 16/9;"><figure>';
-	$html .= '<a href="' . $info['url'] . '" title="' . htmlentities($info['title'] . ' by ' . $info['user_id']) .'">';
+// phpcs:disable
+// Images are served directly from oneshader.net so we always show the most up-to-date previews.
+function oneshader_layout_shader( $info, $hide_username ) {
+	$html  = '<li class="blocks-gallery-item"><figure>';
+	$html .= '<a href="' . esc_url( $info['url'] ) . '" title="' . esc_attr( $info['title'] . ' by ' . $info['user_id'] ) . '">';
 	$html .= '<picture>';
-	$html .= '<source type="image/webp" srcset="' . $info['webp'] . '" />';
-	$html .= '<img src="' . $info['img'] . '" alt="' . str_replace("\n", '&#10;', htmlentities($info['description'])) . '" width="512" height="512" />';
+	$html .= '<source type="image/webp" srcset="' . esc_url( $info['webp'] ) . '" />';
+	$html .= '<img src="' . esc_url( $info['img'] ) . '" alt="' . esc_attr( str_replace( "\n", '&#10;', $info['description'] ) ) . '" width="512" height="512" />';
 	$html .= '</picture>';
-	$html .= '<figcaption>' . $info['title'] . (!$hideusername?'<br/>by ' . $info['user_id']:'') . '</figcaption>';
+	$html .= '<figcaption>' . esc_html( $info['title'] ) . ( ! $hide_username ? '<br/>by ' . esc_html( $info['user_id'] ) : '' ) . '</figcaption>';
 	$html .= '</a>';
 	$html .= '</figure></li>';
 
 	return $html;
 }
+// phpcs:enable
 
 register_activation_hook( __FILE__, 'oneshader_install' );
-add_shortcode('oneshader-list', 'oneshader_list');
+add_shortcode( 'oneshader-list', 'oneshader_list' );
 

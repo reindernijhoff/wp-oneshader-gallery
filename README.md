@@ -1,30 +1,54 @@
-# Wordpress OneShader Gallery Plugin
+# WordPress OneShader Gallery Plugin
 
-This WordPress plugin enables a shortcode for adding a gallery with [OneShader](https://oneshader.net) shaders to your WordPress site. The gallery's content is based on a _query_ attribute of the shortcode and will update automatically.
+OneShader Gallery lets you embed curated shader galleries powered by [OneShader](https://oneshader.net). Using a single shortcode, the plugin fetches remote thumbnails directly from OneShader, keeps them cached for performance, and renders a responsive WordPress block gallery with optional metadata.
 
-You can find a live demo of this plugin [here](https://reindernijhoff.net/oneshader/).
+Live demo: [https://reindernijhoff.net/oneshader/](https://reindernijhoff.net/oneshader/)
 
-Note:
-- This is (one of) the first WordPress plugins I have ever made. 
+## Features
 
-I don't want to DDoS OneShader, and I want a fast plugin. Therefore, a query's result will be cached for (at least) one day.
+* Shortcode-driven galleries.
+* Adjustable column counts and item limits.
+* Optional hiding of the creator username per gallery.
+* Automatic JSON-LD metadata embedding for better SEO.
+* Caching layer to avoid unnecessary API calls while keeping content fresh.
 
 ## Installation
 
-Copy the _oneshader_ directory into _wp-content/plugins_ and activate the plugin in the Admin.
+1. Upload the plugin folder `oneshader` to `/wp-content/plugins/oneshader-gallery`, or install it directly from the WordPress admin Plugins screen.
+2. Activate the **OneShader Gallery** plugin from **Plugins → Installed Plugins**.
+3. Add the shortcode to any post or page.
 
-## Basic usage
+## Usage
 
-Add a _oneshader-list_ shortcode to your post or page. For example:
+Insert the `[oneshader-list]` shortcode wherever you want the gallery to appear.
 
 ```
 [oneshader-list query="shader/browse/love/"]
 ```
 
-## Optional attributes
+To showcase shaders from a specific user:
 
-You can use the following (optional) attributes:
+```
+[oneshader-list query="user/USERNAME/love/"]
+```
 
-- *query* - The query term.
-- *columns* (optional, default = 2) - Number of columns of the gallery. Values 1,2,3 and 4 are supported.
-- *limit* (optional, default = 0) - Maximum number of shaders in the gallery if limit > 0.
+## Optional Attributes
+
+* `query` – Required. The API query path (e.g., `shader/browse/love/`).
+* `columns` – Optional; default `2`. Accepts `1`, `2`, `3`, or `4` columns.
+* `limit` – Optional; default `0` (unlimited). Set to a positive integer to cap the number of shaders.
+* `hideusername` – Optional; default `0`. Set to `1` to omit the creator attribution in the caption.
+
+## External services
+
+This plugin calls the OneShader API (`https://oneshader.net/api/v1/…`) to fetch gallery data based on the shortcode parameters. The service is provided by OneShader — review their [Terms of Service](https://oneshader.net/terms) before use.
+
+## Frequently Asked Questions
+
+### Why are the images loaded from OneShader directly?
+
+To ensure you always display the latest previews without bloating your WordPress Media Library. Thumbnails are hotlinked from oneshader.net and never stored locally.
+
+### Does the plugin store any personal data?
+
+No. Only cached API responses (without personal data) are stored temporarily using WordPress transients for performance.
